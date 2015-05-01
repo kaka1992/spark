@@ -189,7 +189,6 @@ public final class BytesToBytesMap {
       @Override
       public Location next() {
         long keySize = PlatformDependent.UNSAFE.getLong(memoryManager.getPage(addr), addr);
-        long key = PlatformDependent.UNSAFE.getLong(null, addr+8);
         if (keySize == 0) {
           currentPage = dataPages.get(pageCur++);
           addr = currentPage.getBaseOffset();
