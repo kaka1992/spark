@@ -20,30 +20,29 @@ package org.apache.spark.sql
 import java.io.CharArrayWriter
 import java.sql.DriverManager
 
+import com.fasterxml.jackson.core.JsonFactory
+import org.apache.spark.annotation.{DeveloperApi, Experimental}
+import org.apache.spark.api.java.JavaRDD
+import org.apache.spark.api.python.SerDeUtil
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.analysis.{ResolvedStar, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.plans.{Inner, JoinType}
+import org.apache.spark.sql.catalyst.{ScalaReflection, SqlParser}
+import org.apache.spark.sql.execution.{EvaluatePython, ExplainCommand, LogicalRDD}
+import org.apache.spark.sql.jdbc.JDBCWriteDetails
+import org.apache.spark.sql.json.JsonRDD
+import org.apache.spark.sql.sources.{CreateTableUsingAsSelect, ResolvedDataSource}
+import org.apache.spark.sql.types.{NumericType, StructType}
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.Utils
+
 import scala.collection.JavaConversions._
 import scala.language.implicitConversions
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 import scala.util.control.NonFatal
-
-import com.fasterxml.jackson.core.JsonFactory
-
-import org.apache.spark.annotation.{DeveloperApi, Experimental}
-import org.apache.spark.api.java.JavaRDD
-import org.apache.spark.api.python.SerDeUtil
-import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
-import org.apache.spark.sql.catalyst.{ScalaReflection, SqlParser}
-import org.apache.spark.sql.catalyst.analysis.{UnresolvedRelation, ResolvedStar}
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.{JoinType, Inner}
-import org.apache.spark.sql.catalyst.plans.logical._
-import org.apache.spark.sql.execution.{EvaluatePython, ExplainCommand, LogicalRDD}
-import org.apache.spark.sql.jdbc.JDBCWriteDetails
-import org.apache.spark.sql.json.JsonRDD
-import org.apache.spark.sql.types.{NumericType, StructType}
-import org.apache.spark.sql.sources.{ResolvedDataSource, CreateTableUsingAsSelect}
-import org.apache.spark.util.Utils
 
 
 private[sql] object DataFrame {
@@ -175,6 +174,7 @@ class DataFrame private[sql](
    * @param numRows Number of rows to show
    */
   private[sql] def showString(numRows: Int): String = {
+    val sb = new StringBuilder
     val data = take(numRows)
     val numCols = schema.fieldNames.length
 
@@ -194,12 +194,34 @@ class DataFrame private[sql](
       }
     }
 
-    // Pad the cells
-    rows.map { row =>
-      row.zipWithIndex.map { case (cell, i) =>
-        String.format(s"%-${colWidths(i)}s", cell)
-      }.mkString(" ")
-    }.mkString("\n")
+    // Create SeparateLine
+    val sep: String = {
+      "+" + colWidths.map {
+        size =>
+          val columnSep = new Array[Char](size)
+          for (i <- 0 until size)
+            columnSep(i) = '-'
+          String.valueOf(columnSep)
+      }.mkString("+") + "+\n"
+    }
+
+    sb.append(sep)
+
+    // append column names
+    sb.append("|").append(rows.head.zipWithIndex.map { case (cell, i) =>
+      String.format(s"%${colWidths(i)}s", cell)
+    }.mkString("|")).append("|\n")
+
+    // append data
+    sb.append(rows.tail.map { row =>
+      "|" + row.zipWithIndex.map { case (cell, i) =>
+        String.format(s"%${colWidths(i)}s", cell)
+      }.mkString("|") + "|"
+    }.mkString("\n")).append("\n")
+
+    sb.append(sep)
+
+    sb.toString()
   }
 
   override def toString: String = {
